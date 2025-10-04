@@ -14,12 +14,15 @@ const input = {
   cdnDomains: core.getInput("cdn-domains"),
   timeout: parseInt(core.getInput("timeout")) || 10000,
   retry: parseInt(core.getInput("retry")) || 3,
-  useIntlEndpoint: core.getBooleanInput("use-intl-endpoint") || false
+  useIntlEndpoint: core.getBooleanInput("use-intl-endpoint") || false,
+  esaSiteNames: core.getInput("esa-site-names"),
 };
 
 const baseDomain = input.useIntlEndpoint ? "ap-southeast-1.aliyuncs.com" : "aliyuncs.com";
+const baseEsaDomain = input.useIntlEndpoint ? "ap-southeast-1.aliyuncs.com" : "cn-hangzhou.aliyuncs.com";
 const casEndpoint = `https://cas.${baseDomain}`;
 const cdnEndpoint = `https://cdn.${baseDomain}`;
+const esaEndpoint = `https://esa.${baseEsaDomain}`;
 
 /**
  * @param {string} endpoint
@@ -27,7 +30,7 @@ const cdnEndpoint = `https://cdn.${baseDomain}`;
  * @param {string} action
  * @param {Record<string, unknown>} params
  */
-function callAliyunApi(endpoint, apiVersion, action, params) {
+function callAliyunApi(endpoint, apiVersion, action, params, method = 'POST') {
   return new Promise((resolve, reject) => {
     let retryTimes = 0;
     const client = new AliyunClient({
@@ -43,7 +46,7 @@ function callAliyunApi(endpoint, apiVersion, action, params) {
     });
 
     const request = () => client
-      .request(action, params, { method: "POST", timeout: input.timeout })
+      .request(action, params, { method: method, timeout: input.timeout })
       .then(resolve)
       .catch(error => {
         console.log(`Aliyun Client Error ${++retryTimes}/${input.retry}`, error)
@@ -165,10 +168,83 @@ async function deployCertificateToCdn(certId) {
   }
 }
 
+async function deployCertificateToEsa(certId) {
+  /**
+   * @typedef ListEsaSitesItem
+   * @prop {number} SiteId
+   * @prop {string} SiteName
+   * 
+   * @typedef ListEsaSitesResponse
+   * @prop {number} TotalCount
+   * @prop {ListEsaSitesItem[]} Sites
+   * 
+   * @typedef ListCertificatesItem
+   * @prop {string} Name
+   * @prop {string} Id
+   * 
+   * @typedef ListCertificatesResponse
+   * @prop {number} TotalCount
+   * @prop {ListCertificatesItem[]} Result
+   */
+
+  const siteNames = Array.from(new Set(input.esaSiteNames.split(/\s+/).filter(x => x)));
+  for (const siteName of siteNames) {
+    console.log(`Deploying certificate to ESA site ${siteName}.`);
+    /**
+     * @type {ListEsaSitesResponse}
+     */
+    const esaSiteList = await callAliyunApi(
+      esaEndpoint, "2024-09-10",
+      "ListSites",
+      {
+        siteSearchType: 'exact',
+        siteName: siteName,
+      }, 'GET'
+    );
+    if(esaSiteList.TotalCount == 0){
+      throw new Error(`siteName ${siteName} does NOT exist`);
+    }
+
+    /**
+     * @type {ListCertificatesResponse}
+     */
+    const certList = await callAliyunApi(
+      esaEndpoint, "2024-09-10",
+      "ListCertificates",
+      {
+        SiteId: esaSiteList.Sites[0].SiteId
+      }, 'GET'
+    );
+
+    const existCert = certList.Result.find(item => item.Name === input.certificateName);
+    if(existCert){
+      await callAliyunApi(
+        esaEndpoint, "2024-09-10",
+        "DeleteCertificate",
+        {
+          SiteId: esaSiteList.Sites[0].SiteId,
+          Id: existCert.Id,
+        }, 'GET'
+      );
+    }
+  
+    await callAliyunApi(
+      esaEndpoint, "2024-09-10",
+      "SetCertificate",
+      {
+        Type: "cas",
+        CasId: certId,
+        SiteId: esaSiteList.Sites[0].SiteId
+      }
+    ); 
+  }
+}
+
 async function main() {
   const certId = await deployCertificate();
   console.log(`Deployed certificate ${certId}.`);
   if (input.cdnDomains) await deployCertificateToCdn(certId);
+  if (input.esaSiteNames) await deployCertificateToEsa(certId);
 }
 
 main().catch(error => {

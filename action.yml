@@ -34,6 +34,9 @@ inputs:
   use-intl-endpoint:
     description: Use intl version of Aliyun Certificates Service (ap-southeast-1) rather than default (cn-hangzhou).
     default: false
+  esa-site-names:
+    description: Enter a list of ESA site name you want to deploy the certificate to.
+    required: false
 runs:
   using: node16
   main: bootstrap.js
