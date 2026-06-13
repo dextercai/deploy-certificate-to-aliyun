@@ -299,7 +299,7 @@ async function deployCertificateToEsaSaas(certId) {
           Hostname: saasSiteList.Hostnames[0].HostnameId,
           CertType: 'cas',
           CasId: certId,
-        }, 'GET'
+        }, 'POST'
       );
 
     }
