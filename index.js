@@ -296,7 +296,7 @@ async function deployCertificateToEsaSaas(certId) {
         esaEndpoint, "2024-09-10",
         "UpdateCustomHostname",
         {
-          Hostname: saasSiteList.Hostnames[0].HostnameId,
+          HostnameId: saasSiteList.Hostnames[0].HostnameId,
           CertType: 'cas',
           CasId: certId,
         }, 'POST'
