@@ -16,6 +16,7 @@ const input = {
   retry: parseInt(core.getInput("retry")) || 3,
   useIntlEndpoint: core.getBooleanInput("use-intl-endpoint") || false,
   esaSiteNames: core.getInput("esa-site-names"),
+  esaSaasSiteNames: core.getInput("esa-saas-site-names"),
 };
 
 const baseDomain = input.useIntlEndpoint ? "ap-southeast-1.aliyuncs.com" : "aliyuncs.com";
@@ -240,11 +241,77 @@ async function deployCertificateToEsa(certId) {
   }
 }
 
+async function deployCertificateToEsaSaas(certId) {
+  /**
+   * @typedef ListEsaSitesItem
+   * @prop {number} SiteId
+   * @prop {string} SiteName
+   * 
+   * @typedef ListEsaSitesResponse
+   * @prop {number} TotalCount
+   * @prop {ListEsaSitesItem[]} Sites
+   * 
+   * @typedef ListCertificatesItem
+   * @prop {string} Name
+   * @prop {string} Id
+   * 
+   * @typedef ListCertificatesResponse
+   * @prop {number} TotalCount
+   * @prop {ListCertificatesItem[]} Result
+   */
+
+  const saasNames = Array.from(new Set(input.esaSaasSiteNames.split(/\s+/).filter(x => x)));
+  for (const saasName of saasNames) {
+    console.log(`Deploying certificate to ESA SaaS domain ${saasName}.`);
+    /**
+     * @type {ListEsaSitesResponse}
+     */
+    const esaSiteList = await callAliyunApi(
+      esaEndpoint, "2024-09-10",
+      "ListSites",
+      {}, 'GET'
+    );
+    if(esaSiteList.TotalCount == 0){
+      throw new Error(`esaSite does NOT exist`);
+    }
+
+    for (const site of esaSiteList.Sites) {
+      const saasSiteList = await callAliyunApi(
+        esaEndpoint, "2024-09-10",
+        "ListCustomHostnames",
+        {
+          SiteId: site.SiteId,
+          NameMatchType: 'exact',
+          Hostname: saasName,
+        }, 'GET'
+      );
+
+      if(saasSiteList.TotalCount == 0){
+        console.log(`saasName ${saasName} does NOT exist in site ${site.SiteName}`);
+        continue;
+      }
+      console.log(`Found saasName ${saasName} in site ${site.SiteName}, deploying certificate to it.`);
+
+      await callAliyunApi(
+        esaEndpoint, "2024-09-10",
+        "UpdateCustomHostname",
+        {
+          Hostname: saasSiteList.Hostnames[0].HostnameId,
+          CertType: 'cas',
+          CasId: certId,
+        }, 'GET'
+      );
+
+    }
+  }
+}
+
 async function main() {
   const certId = await deployCertificate();
   console.log(`Deployed certificate ${certId}.`);
   if (input.cdnDomains) await deployCertificateToCdn(certId);
   if (input.esaSiteNames) await deployCertificateToEsa(certId);
+  if (input.esaSaasSiteNames) await deployCertificateToEsaSaas(certId);
 }
 
 main().catch(error => {
