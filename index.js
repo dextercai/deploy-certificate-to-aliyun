@@ -24,6 +24,7 @@ const baseEsaDomain = input.useIntlEndpoint ? "ap-southeast-1.aliyuncs.com" : "c
 const casEndpoint = `https://cas.${baseDomain}`;
 const cdnEndpoint = `https://cdn.${baseDomain}`;
 const esaEndpoint = `https://esa.${baseEsaDomain}`;
+const certRegion = input.useIntlEndpoint ? "ap-southeast-1" : "cn-hangzhou";
 
 /**
  * @param {string} endpoint
@@ -251,13 +252,15 @@ async function deployCertificateToEsaSaas(certId) {
    * @prop {number} TotalCount
    * @prop {ListEsaSitesItem[]} Sites
    * 
-   * @typedef ListCertificatesItem
-   * @prop {string} Name
-   * @prop {string} Id
+   * @typedef ListEsaSaasSitesItem
+   * @prop {string} RecordName
+   * @prop {string} SiteName
+   * @prop {number} SiteId
+   * @prop {number} HostnameId
    * 
-   * @typedef ListCertificatesResponse
+   * @typedef ListEsaSaasSitesResponse
    * @prop {number} TotalCount
-   * @prop {ListCertificatesItem[]} Result
+   * @prop {ListEsaSaasSitesItem[]} Hostnames
    */
 
   const saasNames = Array.from(new Set(input.esaSaasSiteNames.split(/\s+/).filter(x => x)));
@@ -276,6 +279,9 @@ async function deployCertificateToEsaSaas(certId) {
     }
 
     for (const site of esaSiteList.Sites) {
+      /**
+       * @type {ListEsaSaasSitesResponse}
+       */
       const saasSiteList = await callAliyunApi(
         esaEndpoint, "2024-09-10",
         "ListCustomHostnames",
@@ -299,6 +305,7 @@ async function deployCertificateToEsaSaas(certId) {
           HostnameId: saasSiteList.Hostnames[0].HostnameId,
           CertType: 'cas',
           CasId: certId,
+          CasRegion: certRegion,
         }, 'POST'
       );
 
